@@ -134,6 +134,8 @@ export function buildLobby(scene) {
     m.group.scale.setScalar(0.9);
     m.group.position.set(7 + i * 1.4, 0.25, 5 + i * 0.8);
     m.group.rotation.y = rand(0, 6);
+    m.home = m.group.position.clone();
+    m.scare = { state: 'idle', t: 0, dur: 0, phase: rand(0, 6) };
     scene.add(m.group);
     decoDucks.push(m);
   }
@@ -192,23 +194,57 @@ export function buildLobby(scene) {
   }
 
   let t = 0;
+  let skySpd = 0.14;   // velocidad de los patos del cielo (se acelera al asustarse)
+  const POND = { x: 8, z: 5.5 };
   return {
     interactables: [
       { id: 'armas', pos: new THREE.Vector3(-8, 0, -6), r: 4.2 },
       { id: 'perros', pos: new THREE.Vector3(8, 0, -6), r: 4.2 },
       { id: 'npc', pos: new THREE.Vector3(0, 0, -12), r: 4.5 },
     ],
+    // asusta a los patos del estanque: salen volando y luego vuelven
+    scare() {
+      let n = 0;
+      for (const m of decoDucks) {
+        if (m.scare.state === 'idle') {
+          m.scare.state = 'fly';
+          m.scare.t = 0;
+          m.scare.dur = rand(7, 11);
+          n++;
+        }
+      }
+      skySpd = 0.6;   // los del cielo también se aceleran un ratito
+      return n;
+    },
     update(dt) {
       t += dt;
       flame.scale.setScalar(1 + Math.sin(t * 9) * 0.14 + Math.sin(t * 23) * 0.07);
       flame2.scale.setScalar(1 + Math.sin(t * 11 + 1) * 0.2);
       fireLight.intensity = 1.2 + Math.sin(t * 13) * 0.3;
-      skyDucks.rotation.y += dt * 0.14;
+      skySpd += (0.14 - skySpd) * Math.min(1, dt * 0.5);
+      skyDucks.rotation.y += dt * skySpd;
       decoDucks.forEach((m, i) => {
-        m.group.position.y = 0.25 + Math.sin(t * 1.8 + i * 2) * 0.05;
-        m.group.rotation.y += Math.sin(t * 0.4 + i) * dt * 0.3;
-        m.wingL.rotation.z = 0.3;
-        m.wingR.rotation.z = -0.3;
+        const s = m.scare;
+        if (s.state === 'idle') {
+          m.group.position.y = 0.25 + Math.sin(t * 1.8 + i * 2) * 0.05;
+          m.group.rotation.y += Math.sin(t * 0.4 + i) * dt * 0.3;
+          m.wingL.rotation.z = 0.3;
+          m.wingR.rotation.z = -0.3;
+        } else {
+          s.t += dt;
+          const k = s.t;
+          const rad = 2.2 + Math.min(2.6, k * 0.9);            // se aleja al despegar
+          const ang = s.phase + k * 1.7;                        // círculo sobre el estanque
+          const lift = Math.min(3.4, k * 1.5);                  // gana altura
+          const landT = Math.max(0, s.dur - 2.2);               // al final, baja a posarse
+          const y = k > landT ? Math.max(0.25, lift - (k - landT) * 1.7) : lift;
+          m.group.position.set(POND.x + Math.cos(ang) * rad, y, POND.z + Math.sin(ang) * rad * 0.8);
+          m.group.rotation.y = Math.atan2(-Math.sin(ang), Math.cos(ang) * 0.8);
+          const flap = Math.sin(t * 26 + i * 3);
+          m.wingL.rotation.z = 0.3 + flap * 0.75;
+          m.wingR.rotation.z = -0.3 - flap * 0.75;
+          if (k >= s.dur) { s.state = 'idle'; m.group.position.copy(m.home); }
+        }
       });
       npc.rotation.y = Math.sin(t * 0.5) * 0.3;
     }

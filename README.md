@@ -1,35 +1,40 @@
 # 🦆 Pantano de Patos
 
 Shooter-tycoon 3D low-poly para celular y PC, hecho con **Three.js** (HTML5, sin instalar nada).
-Caza patos en un pantano eternamente diurno, mejora tu rifle y tu perro cobrador, sobrevive a los
-patos enfadados y derrota a un jefe gigante cada día durante **100 días**.
+Empiezas en un **campamento** con armería y perrería; compra armas y perros con rarezas,
+parte a cazar al pantano eternamente diurno, sobrevive a los patos enfadados
+y derrota a un jefe gigante cada día durante **100 días**.
 
 ## 🎮 Cómo se juega
 
+- **El campamento** (lobby): tu base tranquila. Acércate a la **armería** para comprar rifles y
+  escopetas (de Común a Mítico, con perks como postas múltiples, perforación o daño en área) y a la
+  **perrería** para adoptar perros con distintos aspectos y bonos. Habla con el **cazador del bote**
+  para partir al pantano. Si disparas, los patos del estanque salen volando asustados 🦆.
 - **Caza**: patos vuelan en línea recta cruzando el mapa. Mátalos, caen al suelo y los recoges
   (o tu perro los trae por ti).
 - **Plumas**: matar un pato suelta plumas (dinero). Cada pato guardado se vende por **10 plumas**.
-- **La caja** (al lado de donde apareces): mejora **daño**, **velocidad de recarga** y **capacidad
-  de balas** del rifle; **capacidad**, **velocidad** y **guardado automático** del perro; guarda y
-  vende tus patos.
-- **Perro**: busca automáticamente los patos caídos y los trae a la caja. Mejóralo para que traiga
-  más, corra más rápido o los guarde solo.
+- **La caja** (en el campamento de caza del pantano): guarda y vende tus patos.
+- **Perro**: busca automáticamente los patos caídos y los trae a la caja. Adopta mejores razas en
+  la perrería: más huecos, más velocidad o guardado automático.
 - **Patos enfadados**: a veces un grupo vuela hacia ti graznando furioso — mátalos antes de que
   te alcancen, o esquiva.
 - **Jefes**: cada 15 minutos aparece un pato gigante con habilidades únicas (rayos láser, bolas de
   fuego, meteoritos, ondas expansivas, clones...). Su vida y recompensa crecen con el día.
   Al derrotarlo avanzas al **día siguiente** (100 días, 10 jefes distintos).
-- **El progreso se guarda solo** en tu navegador. También puedes iniciar una partida nueva.
+- **El progreso se guarda solo** en tu navegador (armas, perros, día y plumas). También puedes
+  iniciar una partida nueva o volver al campamento desde la pausa.
 
 ## 📱 Controles
 
 | Acción | Móvil | PC |
 |---|---|---|
 | Moverse | Joystick izquierdo | WASD |
+| Correr | Botón 🏃 | Shift |
 | Mirar | Deslizar lado derecho | Ratón (clic para capturar) |
 | Disparar | Botón 🔫 | Clic izquierdo |
 | Recargar | Botón 🔄 | R |
-| Abrir caja | Botón 📦 (cerca de ella) | E |
+| Interactuar (tiendas, cazador, caja) | Botón contextual | E |
 
 ## ▶️ Jugar
 
@@ -45,12 +50,14 @@ npx http-server -p 8080   # o: python -m http.server 8080
 
 ```
 index.html         UI, HUD y menús
-src/main.js        bucle, economía, guardado, disparo
+src/main.js        bucle, economía, guardado, disparo, cambio lobby↔pantano
+src/lobby.js       campamento: puestos, estanque, fogata, NPC cazador
+src/shop.js        catálogo: armas y perros con rarezas
 src/world.js       terreno, agua, juncos, árboles, nubes
 src/duck.js        patos, oleadas, plumas
 src/dog.js         perro cobrador
-src/player.js      controles, rifle, vida
-src/chest.js       caja: mejoras y venta
+src/player.js      controles, arma en mano, vida
+src/chest.js       caja: guardar y vender
 src/bosses.js      los 10 jefes y sus habilidades
 src/audio.js       sonidos sintetizados (WebAudio)
 vendor/            three.js (r164)
