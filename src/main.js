@@ -39,6 +39,61 @@ resize();
 
 const sfx = new SFX();
 const world = buildWorld(scene);
+const IS_TOUCH = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+if (!IS_TOUCH) {
+  for (const id of ['btnFire', 'btnReload', 'joyZone', 'lookZone']) $(id).style.display = 'none';
+}
+
+// ---------------------------------------------------------------- API interna
+const api = {
+  sfx, toast,
+  playerPos: () => player.pos.clone(),
+  isPlaying: () => G.playing && !G.paused && !chestOpen && !player.dead,
+  damagePlayer: n => player.takeDamage(n),
+  slowPlayer: t => {
+    player.speed = 4.2;
+    clearTimeout(slowTO);
+    slowTO = setTimeout(() => player.speed = 8, t * 1000);
+  },
+  featherBurst: (p, n, c) => ducks.burst(p, n, c),
+  groundDucks: () => ducks.groundDucks(),
+  addPlumas: n => { G.plumas += n; },
+  onDuckGrounded: () => {},
+  onDogGrabbed: () => {},
+  storeFromDog: n => { chest.stored += n; toast(`📦 +${n} pato(s) guardados por el perro`); save(); },
+  giveCarriedFromDog: n => { G.carried += n; toast(`🎒 Recogiste ${n} pato(s) del perro`); },
+  onHurt: () => {
+    const v = $('vign');
+    v.style.opacity = 1;
+    setTimeout(() => v.style.opacity = 0, 150);
+  },
+  onPlayerDead: () => {
+    const lost = Math.floor(G.plumas * 0.1);
+    $('deathSub').textContent = lost > 0
+      ? `Los patos te dejaron mareado... pierdes ${lost} plumas. Tu progreso del día se mantiene.`
+      : 'Los patos te dejaron mareado... Tu progreso del día se mantiene.';
+    $('death').style.display = 'flex';
+    document.exitPointerLock?.();
+  },
+  setBossBar: (name, frac) => {
+    $('bossBar').style.display = 'block';
+    $('bossName').textContent = name;
+    $('bossFill').style.width = (frac * 100).toFixed(1) + '%';
+  },
+  onBossDefeated: reward => {
+    G.plumas += reward;
+    showBanner(`🏆 ¡${boss.type.name} derrotado!`, `+${reward} plumas — comienza el día ${G.day + 1}`);
+    $('bossBar').style.display = 'none';
+    boss = null;
+    bossTimer = BOSS_EVERY;
+    G.day++;
+    ducks.day = G.day;
+    save();
+    sfx.coin();
+  },
+  onShot: () => resolveShot(),
+  interact: () => { if (!G.playing || G.paused) return; if (nearChest()) openChest(); },
+};
 
 // caja y perro
 const chest = new Chest(scene, new THREE.Vector3(0, Math.max(heightAt(0, 4.5), 0) + 0.1, 4.5), sfx);
@@ -120,56 +175,6 @@ function startPlaying() {
   save();
 }
 
-// ---------------------------------------------------------------- API interna
-const api = {
-  sfx, toast,
-  playerPos: () => player.pos.clone(),
-  isPlaying: () => G.playing && !G.paused && !chestOpen && !player.dead,
-  damagePlayer: n => player.takeDamage(n),
-  slowPlayer: t => {
-    player.speed = 4.2;
-    clearTimeout(slowTO);
-    slowTO = setTimeout(() => player.speed = 8, t * 1000);
-  },
-  featherBurst: (p, n, c) => ducks.burst(p, n, c),
-  addPlumas: n => { G.plumas += n; },
-  onDuckGrounded: () => {},
-  onDogGrabbed: () => {},
-  storeFromDog: n => { chest.stored += n; toast(`📦 +${n} pato(s) guardados por el perro`); save(); },
-  giveCarriedFromDog: n => { G.carried += n; toast(`🎒 Recogiste ${n} pato(s) del perro`); },
-  onHurt: () => {
-    const v = $('vign');
-    v.style.opacity = 1;
-    setTimeout(() => v.style.opacity = 0, 150);
-  },
-  onPlayerDead: () => {
-    const lost = Math.floor(G.plumas * 0.1);
-    $('deathSub').textContent = lost > 0
-      ? `Los patos te dejaron mareado... pierdes ${lost} plumas. Tu progreso del día se mantiene.`
-      : 'Los patos te dejaron mareado... Tu progreso del día se mantiene.';
-    $('death').style.display = 'flex';
-    document.exitPointerLock?.();
-  },
-  setBossBar: (name, frac) => {
-    $('bossBar').style.display = 'block';
-    $('bossName').textContent = name;
-    $('bossFill').style.width = (frac * 100).toFixed(1) + '%';
-  },
-  onBossDefeated: reward => {
-    G.plumas += reward;
-    showBanner(`🏆 ¡${boss.type.name} derrotado!`, `+${reward} plumas — comienza el día ${G.day + 1}`);
-    $('bossBar').style.display = 'none';
-    boss = null;
-    bossTimer = BOSS_EVERY;
-    G.day++;
-    ducks.day = G.day;
-    save();
-    sfx.coin();
-  },
-  onShot: () => resolveShot(),
-  interact: () => { if (!G.playing || G.paused) return; if (nearChest()) openChest(); },
-};
-
 // ---------------------------------------------------------------- disparo con asistencia
 const _fwd = new THREE.Vector3(), _to = new THREE.Vector3();
 function resolveShot() {
@@ -217,8 +222,9 @@ function resolveShot() {
       boss.hitClone(best.point, player.dmg, api);
       ducks.burst(best.point, 5, 0xffffff);
     } else if (best.kind === 'boss') {
+      const bpos = boss.pos.clone();
       boss.hit(player.dmg, api);
-      ducks.burst(boss.pos, 6, 0xffe08a);
+      ducks.burst(bpos, 6, 0xffe08a);
     }
   } else {
     // impacto en el suelo: polvo
@@ -231,7 +237,7 @@ function resolveShot() {
 // ---------------------------------------------------------------- caja UI
 function nearChest() {
   const dx = player.pos.x - chest.pos.x, dz = player.pos.z - chest.pos.z;
-  return Math.hypot(dx, dz) < 4.5;
+  return Math.hypot(dx, dz) < 5.5;
 }
 function openChest() {
   chestOpen = true;
@@ -369,9 +375,11 @@ function updateHUD() {
   $('hpFill').style.width = (player.hp / player.maxHp * 100) + '%';
   // interacción con la caja
   const nc = nearChest() && G.playing && !chestOpen;
-  $('btnChest').style.display = nc ? 'flex' : 'none';
+  $('btnChest').style.display = (nc && IS_TOUCH) ? 'flex' : 'none';
   const pr = $('prompt');
   if (nc) { pr.style.display = 'block'; pr.textContent = '📦 Abrir caja (E)'; }
   else pr.style.display = 'none';
 }
+// manija de depuración/pruebas
+window.__pantano = { G, player, dog, chest, ducks, sfx, api, spawnBoss, openChest, get boss() { return boss; }, set boss(b) { boss = b; } };
 loop();
