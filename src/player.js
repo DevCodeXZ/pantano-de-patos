@@ -1,47 +1,58 @@
 import * as THREE from 'three';
 import { heightAt, WATER_Y, MAP_R, clamp, mergeGeoms, M4 } from './world.js';
 
+export const SWAMP_SPAWN = { x: -14, z: 24 };   // campamento junto a la caja
+export const LOBBY_SPAWN = { x: 0, z: 8 };
+
 export class Player {
   constructor(camera, dom, sfx, api) {
     this.cam = camera;
     this.sfx = sfx;
     this.api = api;
-    this.pos = new THREE.Vector3(0, 2, 0);
-    this.yaw = Math.PI;         // mirando hacia la caja
-    this.pitch = -0.05;
+    this.pos = new THREE.Vector3(LOBBY_SPAWN.x, 1.7, LOBBY_SPAWN.z);
+    this.yaw = 0;
+    this.pitch = 0;
     this.hp = 100;
     this.maxHp = 100;
-    this.speed = 8;
     this.hurtCd = 0;
     this.regenCd = 0;
     this.dead = false;
+    this.slowT = 0;
+    this.wantSprint = false;
 
-    // arma
-    this.dmg = 1;
+    // arma equipada
+    this.dmg = 1.5;
     this.magSize = 5;
     this.reloadTime = 2.2;
+    this.fireInterval = 0.3;
+    this.weapon = null;
     this.ammo = this.magSize;
     this.reloading = false;
     this.reloadT = 0;
     this.fireCd = 0;
-    this.fireInterval = 0.3;
     this.recoil = 0;
 
     this.buildRifle();
     this.setupInput(dom);
-    this.raycaster = new THREE.Raycaster();
   }
   buildRifle() {
     const g = new THREE.Group();
     const geo = mergeGeoms([
-      [new THREE.BoxGeometry(0.07, 0.09, 0.9), M4(0, 0, -0.28, 0, 0, 0, 1), 0x4a4a52],   // cañón
-      [new THREE.BoxGeometry(0.09, 0.14, 0.34), M4(0, -0.03, 0.18, 0.12, 0, 0, 1), 0x6e4a2f], // culata
-      [new THREE.BoxGeometry(0.06, 0.12, 0.14), M4(0, -0.09, -0.02, 0.3, 0, 0, 1), 0x5a3d26], // agarre
-      [new THREE.CylinderGeometry(0.045, 0.045, 0.18, 6), M4(0, 0.07, -0.2, Math.PI / 2, 0, 0, 1), 0x303036], // mira
+      [new THREE.BoxGeometry(0.07, 0.09, 0.9), M4(0, 0, -0.28, 0, 0, 0, 1), 0x4a4a52],
+      [new THREE.BoxGeometry(0.09, 0.14, 0.34), M4(0, -0.03, 0.18, 0.12, 0, 0, 1), 0x6e4a2f],
+      [new THREE.BoxGeometry(0.06, 0.12, 0.14), M4(0, -0.09, -0.02, 0.3, 0, 0, 1), 0x5a3d26],
+      [new THREE.CylinderGeometry(0.045, 0.045, 0.18, 6), M4(0, 0.07, -0.2, Math.PI / 2, 0, 0, 1), 0x303036],
     ]);
     const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
     this.rifle = new THREE.Mesh(geo, mat);
     g.add(this.rifle);
+    // acento de color según el arma equipada
+    this.accent = new THREE.Mesh(
+      new THREE.BoxGeometry(0.105, 0.105, 0.4),
+      new THREE.MeshLambertMaterial({ color: 0x8a6f47 })
+    );
+    this.accent.position.set(0, 0.045, -0.42);
+    g.add(this.accent);
     this.muzzle = new THREE.Mesh(
       new THREE.SphereGeometry(0.09, 6, 5),
       new THREE.MeshBasicMaterial({ color: 0xffdd66 })
@@ -52,6 +63,16 @@ export class Player {
     g.position.set(0.3, -0.26, -0.55);
     this.gunGroup = g;
     this.cam.add(g);
+  }
+  setWeapon(w) {
+    this.weapon = w;
+    this.dmg = w.dmg;
+    this.magSize = w.mag;
+    this.reloadTime = w.reload;
+    this.fireInterval = w.interval;
+    this.ammo = w.mag;
+    this.reloading = false;
+    this.accent.material.color.setHex(w.color);
   }
 
   setupInput(dom) {
@@ -67,7 +88,6 @@ export class Player {
     });
     addEventListener('keyup', e => this.keys[e.code] = false);
 
-    // ratón (PC)
     dom.addEventListener('click', () => {
       if (!('ontouchstart' in window) && this.api.isPlaying() && !document.pointerLockElement) {
         dom.requestPointerLock?.();
@@ -151,7 +171,6 @@ export class Player {
     lookZone.addEventListener('touchend', lookEnd);
     lookZone.addEventListener('touchcancel', lookEnd);
 
-    // botones móviles
     const bind = (id, down, up) => {
       const el = document.getElementById(id);
       el.addEventListener('touchstart', e => { e.preventDefault(); down(); }, { passive: false });
@@ -161,11 +180,7 @@ export class Player {
     };
     bind('btnFire', () => this.wantFire = true, () => this.wantFire = false);
     bind('btnReload', () => this.startReload());
-  }
-
-  setStats(dmg, magSize, reloadTime) {
-    this.dmg = dmg; this.magSize = magSize; this.reloadTime = reloadTime;
-    this.ammo = Math.min(this.ammo, magSize);
+    bind('btnSprint', () => this.wantSprint = true, () => this.wantSprint = false);
   }
 
   startReload() {
@@ -183,7 +198,7 @@ export class Player {
     this.muzzle.visible = true;
     this.muzzleT = 0.05;
     this.sfx.shot();
-    this.api.onShot();   // main resuelve el impacto con asistencia de puntería
+    this.api.onShot();
   }
   takeDamage(n) {
     if (this.dead || this.hurtCd > 0) return;
@@ -193,14 +208,23 @@ export class Player {
     this.api.onHurt();
     if (this.hp <= 0) { this.hp = 0; this.dead = true; this.api.onPlayerDead(); }
   }
-  respawn() {
+  slow(t) { this.slowT = Math.max(this.slowT, t); }
+  toLobby() {
     this.hp = this.maxHp;
     this.dead = false;
-    this.pos.set(0, 2, -3);
-    this.yaw = Math.PI;
+    this.pos.set(LOBBY_SPAWN.x, 1.7, LOBBY_SPAWN.z);
+    this.yaw = 0; this.pitch = 0;
+    this.wantFire = false;
+  }
+  respawn() { // en el pantano, mirando la caja
+    this.hp = this.maxHp;
+    this.dead = false;
+    this.pos.set(SWAMP_SPAWN.x, 3, SWAMP_SPAWN.z);
+    this.yaw = Math.atan2(-(CHEST_POS.x - SWAMP_SPAWN.x), -(CHEST_POS.z - SWAMP_SPAWN.z));
+    this.pitch = 0;
+    this.wantFire = false;
   }
   update(dt) {
-    // recarga
     if (this.reloading) {
       this.reloadT -= dt;
       if (this.reloadT <= 0) { this.reloading = false; this.ammo = this.magSize; }
@@ -209,7 +233,7 @@ export class Player {
     if (this.wantFire) this.fire();
     if (this.muzzleT > 0) { this.muzzleT -= dt; if (this.muzzleT <= 0) this.muzzle.visible = false; }
     if (this.hurtCd > 0) this.hurtCd -= dt;
-    // regeneración lenta
+    if (this.slowT > 0) this.slowT -= dt;
     if (this.regenCd > 0) this.regenCd -= dt;
     else if (this.hp < this.maxHp && !this.dead) this.hp = Math.min(this.maxHp, this.hp + 3 * dt);
 
@@ -226,24 +250,37 @@ export class Player {
     const wx = mx * cos - mz * sin;
     const wz = mx * sin + mz * cos;
     const inWater = heightAt(this.pos.x, this.pos.z) < WATER_Y + 0.2;
-    const sp = this.speed * (inWater ? 0.55 : 1) * Math.min(1, ml);
-    this.pos.x = clamp(this.pos.x + wx * sp * dt, -MAP_R, MAP_R);
-    this.pos.z = clamp(this.pos.z + wz * sp * dt, -MAP_R, MAP_R);
-    const ground = Math.max(heightAt(this.pos.x, this.pos.z), WATER_Y + 0.25);
+    const sprinting = (this.wantSprint || this.keys['ShiftLeft'] || this.keys['ShiftRight']) && ml > 0.2;
+    let sp = 8 * (sprinting ? 1.6 : 1);
+    if (this.slowT > 0) sp *= 0.5;
+    if (inWater) sp *= 0.55;
+    sp *= Math.min(1, ml);
+    const inLobby = this.api.mode() === 'lobby';
+    const bound = inLobby ? 17 : MAP_R;
+    this.pos.x = clamp(this.pos.x + wx * sp * dt, -bound, bound);
+    this.pos.z = clamp(this.pos.z + wz * sp * dt, inLobby ? -18 : -MAP_R, inLobby ? 13 : MAP_R);
+    const ground = inLobby
+      ? 0
+      : Math.max(heightAt(this.pos.x, this.pos.z), WATER_Y + 0.25);
     this.pos.y += (ground + 1.65 - this.pos.y) * Math.min(1, 12 * dt);
 
-    // cámara
+    // cámara + FOV al correr
     this.cam.rotation.order = 'YXZ';
     this.cam.rotation.y = this.yaw;
     this.cam.rotation.x = this.pitch;
     this.cam.position.copy(this.pos);
-    // balanceo al caminar
     if (ml > 0.1) this.bobT = (this.bobT || 0) + dt * sp * 1.4;
     this.cam.position.y += Math.sin(this.bobT || 0) * 0.045;
+    const targetFov = sprinting ? 83 : 75;
+    if (Math.abs(this.cam.fov - targetFov) > 0.1) {
+      this.cam.fov += (targetFov - this.cam.fov) * Math.min(1, 8 * dt);
+      this.cam.updateProjectionMatrix();
+    }
 
-    // retroceso + recarga animada
     this.recoil = Math.max(0, this.recoil - dt * 6);
     this.rifle.position.z = -0.02 + this.recoil * 0.09;
     this.rifle.rotation.x = this.reloading ? -0.8 + Math.sin((1 - this.reloadT / this.reloadTime) * Math.PI) * 0.3 : this.recoil * 0.12;
   }
 }
+// posición de la caja (campamento apartado de las rutas de vuelo)
+export const CHEST_POS = { x: -20, z: 30 };
