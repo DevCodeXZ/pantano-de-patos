@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<title>🦆 Pantano de Patos</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; -webkit-user-select:none; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#0c1512; font-family:'Segoe UI',system-ui,sans-serif; touch-action:none; }
+  #c { position:fixed; inset:0; display:block; }
+  #ui { position:fixed; inset:0; pointer-events:none; z-index:10; }
+  .pe { pointer-events:auto; }
+
+  /* ---------- HUD ---------- */
+  #hud { position:absolute; inset:0; }
+  .chip { position:absolute; background:rgba(10,25,18,.72); color:#ffe9a8; border:1px solid rgba(255,233,168,.35);
+    border-radius:12px; padding:6px 12px; font-size:15px; font-weight:600; backdrop-filter:blur(3px); }
+  #chipPlumas { top:calc(10px + env(safe-area-inset-top)); left:12px; }
+  #chipPatos  { top:calc(46px + env(safe-area-inset-top)); left:12px; font-size:13px; }
+  #chipDia    { top:calc(10px + env(safe-area-inset-top)); left:50%; transform:translateX(-50%); font-size:17px; color:#c8f7c5; }
+  #chipBossTimer { top:calc(44px + env(safe-area-inset-top)); left:50%; transform:translateX(-50%); font-size:12px; color:#ffb0a0; padding:3px 10px; }
+  #btnPause { position:absolute; top:calc(10px + env(safe-area-inset-top)); right:12px; width:42px; height:42px;
+    background:rgba(10,25,18,.72); color:#ffe9a8; border:1px solid rgba(255,233,168,.35); border-radius:12px;
+    font-size:18px; display:flex; align-items:center; justify-content:center; }
+
+  /* vida */
+  #hpWrap { position:absolute; bottom:calc(18px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
+    width:min(42vw,220px); height:14px; background:rgba(0,0,0,.55); border-radius:8px; border:1px solid rgba(255,255,255,.25); overflow:hidden; }
+  #hpFill { width:100%; height:100%; background:linear-gradient(90deg,#4fdc5a,#a8e063); border-radius:7px; transition:width .15s; }
+
+  /* mira */
+  #cross { position:absolute; left:50%; top:50%; width:26px; height:26px; transform:translate(-50%,-50%); opacity:.9; }
+  #cross:before, #cross:after { content:''; position:absolute; background:#fff; box-shadow:0 0 3px #000; }
+  #cross:before { left:50%; top:0; width:2px; height:100%; transform:translateX(-50%); }
+  #cross:after  { top:50%; left:0; height:2px; width:100%; transform:translateY(-50%); }
+  #cross.hit:before, #cross.hit:after { background:#ff5544; }
+  #ammo { position:absolute; left:50%; top:calc(50% + 26px); transform:translateX(-50%);
+    color:#fff; text-shadow:0 1px 3px #000; font-size:14px; font-weight:700; }
+  #ammo.low { color:#ff8877; }
+
+  /* barra jefe */
+  #bossBar { position:absolute; top:calc(84px + env(safe-area-inset-top)); left:50%; transform:translateX(-50%);
+    width:min(86vw,560px); display:none; text-align:center; }
+  #bossName { color:#ffd2c9; font-weight:800; font-size:16px; text-shadow:0 2px 4px #000; margin-bottom:4px; }
+  #bossTrack { height:16px; background:rgba(0,0,0,.6); border:1px solid rgba(255,120,90,.6); border-radius:9px; overflow:hidden; }
+  #bossFill { height:100%; width:100%; background:linear-gradient(90deg,#ff4d3d,#ffb03a); }
+
+  /* prompt interactuar */
+  #prompt { position:absolute; bottom:32%; left:50%; transform:translateX(-50%); background:rgba(20,40,25,.85);
+    color:#ffe9a8; padding:8px 16px; border-radius:12px; border:1px solid #ffe9a855; font-size:14px; display:none; }
+
+  /* banner día */
+  #banner { position:absolute; top:30%; left:50%; transform:translateX(-50%); text-align:center; display:none; }
+  #banner h2 { color:#ffe9a8; font-size:min(9vw,44px); text-shadow:0 3px 10px #000; }
+  #banner p  { color:#c8f7c5; font-size:min(4vw,18px); text-shadow:0 2px 6px #000; margin-top:6px; }
+
+  /* toasts */
+  #toasts { position:absolute; bottom:26%; left:50%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .toast { background:rgba(10,25,18,.85); color:#ffe9a8; padding:6px 14px; border-radius:10px; font-size:14px;
+    border:1px solid rgba(255,233,168,.3); animation:toast 2.6s forwards; }
+  @keyframes toast { 0%{opacity:0; transform:translateY(8px)} 12%{opacity:1; transform:none} 80%{opacity:1} 100%{opacity:0} }
+
+  /* daño */
+  #vign { position:absolute; inset:0; box-shadow:inset 0 0 120px 40px rgba(200,20,10,.75); opacity:0; transition:opacity .12s; }
+
+  /* ---------- controles táctiles ---------- */
+  #joyZone { position:absolute; left:0; bottom:0; width:46%; height:60%; pointer-events:auto; }
+  #lookZone { position:absolute; right:0; bottom:0; width:54%; height:75%; pointer-events:auto; }
+  #joyBase { position:absolute; width:110px; height:110px; border-radius:50%; border:2px solid rgba(255,255,255,.35);
+    background:rgba(255,255,255,.08); display:none; }
+  #joyStick { position:absolute; width:48px; height:48px; border-radius:50%; background:rgba(255,255,255,.45); left:31px; top:31px; }
+  .rbtn { position:absolute; border-radius:50%; background:rgba(15,35,22,.65); border:2px solid rgba(255,233,168,.5);
+    color:#ffe9a8; display:flex; flex-direction:column; align-items:center; justify-content:center; font-weight:800; pointer-events:auto; }
+  #btnFire { right:20px; bottom:calc(64px + env(safe-area-inset-bottom)); width:92px; height:92px; font-size:40px; }
+  #btnFire:active { background:rgba(120,40,20,.8); }
+  #btnReload { right:126px; bottom:calc(120px + env(safe-area-inset-bottom)); width:60px; height:60px; font-size:22px; }
+  #btnChest { right:20px; bottom:calc(170px + env(safe-area-inset-bottom)); width:60px; height:60px; font-size:26px; display:none; }
+  .rlbl { font-size:9px; margin-top:2px; }
+
+  /* ---------- modales ---------- */
+  .modal { position:absolute; inset:0; background:rgba(5,12,8,.78); display:none; align-items:center; justify-content:center; pointer-events:auto; }
+  .panel { background:linear-gradient(160deg,#1c3226,#122019); border:2px solid #ffe9a855; border-radius:18px;
+    width:min(94vw,520px); max-height:88vh; overflow-y:auto; padding:18px; color:#e8f5e0; }
+  .panel h1 { color:#ffe9a8; text-align:center; font-size:26px; margin-bottom:4px; }
+  .panel h3 { color:#c8f7c5; margin:14px 0 8px; border-bottom:1px solid #ffffff22; padding-bottom:4px; }
+  .panel .sub { text-align:center; color:#9fc49a; font-size:13px; margin-bottom:10px; }
+  .bigbtn { display:block; width:100%; margin:8px 0; padding:13px; font-size:16px; font-weight:700; color:#122019;
+    background:linear-gradient(180deg,#ffe9a8,#eecf7a); border:none; border-radius:12px; cursor:pointer; }
+  .bigbtn.sec { background:rgba(255,255,255,.12); color:#ffe9a8; border:1px solid #ffe9a844; }
+  .bigbtn.danger { background:linear-gradient(180deg,#ff9d8a,#e2604c); color:#3a0e06; }
+  .bigbtn:disabled { opacity:.45; }
+  .upRow { display:flex; align-items:center; gap:10px; background:rgba(255,255,255,.06); border-radius:12px; padding:10px 12px; margin:6px 0; }
+  .upInfo { flex:1; min-width:0; }
+  .upInfo b { color:#ffe9a8; }
+  .upInfo small { display:block; color:#9fc49a; font-size:11px; }
+  .upBuy { padding:9px 12px; border-radius:10px; border:none; font-weight:700; font-size:13px; background:#eecf7a; color:#122019; min-width:92px; cursor:pointer; }
+  .upBuy:disabled { opacity:.4; }
+  .upBuy.max { background:#7fd88f; }
+  .lvlDots { font-size:10px; letter-spacing:1px; color:#7fd88f; }
+  .tabs { display:flex; gap:6px; margin-bottom:8px; }
+  .tab { flex:1; padding:9px; text-align:center; border-radius:10px; background:rgba(255,255,255,.08); color:#cde8c5; font-weight:700; font-size:13px; cursor:pointer; border:1px solid transparent; }
+  .tab.on { background:#ffe9a8; color:#122019; }
+  .tabPage { display:none; } .tabPage.on { display:block; }
+  .sellLine { display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,.06); padding:10px 12px; border-radius:12px; margin:6px 0; font-size:14px; }
+  .xclose { position:absolute; top:10px; right:14px; font-size:22px; color:#ffe9a8; background:none; border:none; cursor:pointer; }
+  #menuTitle { font-size:min(11vw,42px); text-align:center; color:#ffe9a8; text-shadow:0 3px 12px #000; }
+  #menuSub { text-align:center; color:#9fc49a; margin:6px 0 20px; font-size:14px; }
+  .hint { color:#7fa878; font-size:11px; text-align:center; margin-top:12px; line-height:1.6; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="ui">
+  <div id="hud" style="display:none">
+    <div class="chip" id="chipPlumas">🪶 0</div>
+    <div class="chip" id="chipPatos">🎒 0 · 📦 0</div>
+    <div class="chip" id="chipDia">Día 1</div>
+    <div class="chip" id="chipBossTimer">⚔️ Jefe en 15:00</div>
+    <button id="btnPause" class="pe">⏸</button>
+    <div id="cross"></div>
+    <div id="ammo">5 / 5</div>
+    <div id="bossBar"><div id="bossName"></div><div id="bossTrack"><div id="bossFill"></div></div></div>
+    <div id="hpWrap"><div id="hpFill"></div></div>
+    <div id="prompt" class="pe"></div>
+    <div id="banner"><h2></h2><p></p></div>
+    <div id="toasts"></div>
+    <div id="vign"></div>
+    <div id="joyZone"><div id="joyBase"><div id="joyStick"></div></div></div>
+    <div id="lookZone"></div>
+    <button id="btnFire" class="rbtn">🔫<span class="rlbl">DISPARAR</span></button>
+    <button id="btnReload" class="rbtn">🔄<span class="rlbl">RECARGAR</span></button>
+    <button id="btnChest" class="rbtn">📦<span class="rlbl">CAJA</span></button>
+  </div>
+
+  <!-- Menú principal -->
+  <div class="modal" id="menu" style="display:flex">
+    <div class="panel">
+      <h1 id="menuTitle">🦆 PANTANO DE PATOS</h1>
+      <p id="menuSub">Caza · Mejora · Sobrevive 100 días</p>
+      <button class="bigbtn" id="btnContinue" style="display:none">▶️ Continuar partida</button>
+      <button class="bigbtn" id="btnNew">🆕 Nueva partida</button>
+      <div class="hint">
+        📱 Móvil: joystick izquierdo para moverte · desliza a la derecha para mirar · botones para disparar, recargar y abrir la caja<br>
+        💻 PC: WASD moverse · ratón mirar (clic para capturar) · clic disparar · R recargar · E abrir caja
+      </div>
+    </div>
+  </div>
+
+  <!-- Pausa -->
+  <div class="modal" id="pause">
+    <div class="panel">
+      <h1>⏸ Pausa</h1>
+      <p class="sub" id="pauseStats"></p>
+      <button class="bigbtn" id="btnResume">▶️ Continuar</button>
+      <button class="bigbtn sec" id="btnSound">🔊 Sonido: activado</button>
+      <button class="bigbtn danger" id="btnReset">🗑 Reiniciar partida (borra progreso)</button>
+    </div>
+  </div>
+
+  <!-- Caja de mejoras -->
+  <div class="modal" id="chest">
+    <div class="panel" style="position:relative">
+      <button class="xclose" id="btnChestClose">✕</button>
+      <h1>📦 Caja del pantano</h1>
+      <p class="sub" id="chestWallet">🪶 0 plumas</p>
+      <div class="tabs">
+        <div class="tab on" data-tab="arma">🔫 Arma</div>
+        <div class="tab" data-tab="perro">🐕 Perro</div>
+        <div class="tab" data-tab="venta">💰 Venta</div>
+      </div>
+      <div class="tabPage on" id="pageArma"></div>
+      <div class="tabPage" id="pagePerro"></div>
+      <div class="tabPage" id="pageVenta"></div>
+    </div>
+  </div>
+
+  <!-- Muerte -->
+  <div class="modal" id="death">
+    <div class="panel">
+      <h1>😵 ¡Te noquearon!</h1>
+      <p class="sub" id="deathSub"></p>
+      <button class="bigbtn" id="btnRespawn">🩹 Volver al pantano</button>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js" } }
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
